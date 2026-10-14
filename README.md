@@ -82,10 +82,10 @@ dispensam confirmação.
 
 **Onde está implementado:**
 
-- [tools/__init__.py — perform, reservar e autorizar](src/aurora/tools/__init__.py#L24): a taxa vem do cadastro; autorizações sempre exigem confirmação estruturada do ADK.
+- [tools/__init__.py — perform](src/aurora/tools/__init__.py#L30), [reservar](src/aurora/tools/__init__.py#L83) e [autorizar](src/aurora/tools/__init__.py#L112): a taxa vem do cadastro; autorizações sempre exigem confirmação estruturada do ADK.
 - [repositories.py — Operations.prepare e correlate](src/aurora/repositories.py#L18): persistem os argumentos e a correlação entre sessão, invocação, especialista e chamada de tool.
-- [repositories.py — Operations.decide e execute](src/aurora/repositories.py#L45): aceitam somente uma decisão para uma pendência daquela sessão, validam a aprovação e gravam efeito e resultado na mesma transação.
-- [runtime.py — Runtime.resume e confirm](src/aurora/runtime.py#L82): enviam `FunctionResponse` de `adk_request_confirmation` ao Runner com o `invocation_id` original, usando o App resumível definido em [agents.py](src/aurora/agents.py#L50).
+- [repositories.py — Operations.decide](src/aurora/repositories.py#L78) e [execute](src/aurora/repositories.py#L97): aceitam somente uma decisão para uma pendência daquela sessão, validam a aprovação e gravam efeito e resultado na mesma transação.
+- [runtime.py — Runtime.resume](src/aurora/runtime.py#L108) e [confirm](src/aurora/runtime.py#L152): enviam `FunctionResponse` de `adk_request_confirmation` ao Runner com o `invocation_id` original, usando o App resumível definido em [agents.py](src/aurora/agents.py#L73).
 
 **Por que não depende do prompt:** texto de consentimento não altera a decisão
 persistida. O serviço também recusa reserva paga ou visitante sem essa decisão.
@@ -99,11 +99,11 @@ Reservas, cancelamentos e visitantes ficam restritos a essa identidade.
 
 **Onde está implementado:**
 
-- [runtime.py — Runtime.create_session](src/aurora/runtime.py#L39): cria o state e o vínculo persistido entre sessão, usuário ADK e apartamento.
+- [runtime.py — Runtime.create_session](src/aurora/runtime.py#L44): cria o state e o vínculo persistido entre sessão, usuário ADK e apartamento.
 - [storage.py — trigger vinculo_imutavel](src/aurora/storage.py#L16): impede atualizar o vínculo já criado.
-- [identity.py — apartment_for](src/aurora/identity.py#L7): confere o usuário e o state contra o vínculo persistido antes do acesso aos dados pessoais.
-- [storage.py — Storage.reservations e visitors](src/aurora/storage.py#L105) e [repositories.py — Operations._effect](src/aurora/repositories.py#L92): filtram consultas e cancelamentos pelo apartamento da sessão.
-- [tools/__init__.py — consultar_disponibilidade](src/aurora/tools/__init__.py#L41): informa disponibilidade sem expor o proprietário ou o código da reserva que ocupa a data.
+- [identity.py — apartment_for](src/aurora/identity.py#L8): confere o usuário e o state contra o vínculo persistido antes do acesso aos dados pessoais.
+- [storage.py — Storage.reservations](src/aurora/storage.py#L133) e [visitors](src/aurora/storage.py#L139), além de [repositories.py — Operations._effect](src/aurora/repositories.py#L172): filtram consultas e cancelamentos pelo apartamento da sessão.
+- [tools/__init__.py — consultar_disponibilidade](src/aurora/tools/__init__.py#L64): informa disponibilidade sem expor o proprietário ou o código da reserva que ocupa a data.
 
 **Por que não depende do prompt:** nenhuma tool recebe um apartamento escolhido
 pelo modelo. Alegar outra identidade na conversa não altera o vínculo usado nas
@@ -117,9 +117,9 @@ O histórico completo continua disponível e a mesma sessão aceita novas mensag
 **Onde está implementado:**
 
 - [runtime.py — Runtime.__init__](src/aurora/runtime.py#L19): configura `DatabaseSessionService` com SQLite em disco.
-- [runtime.py — Runtime.session e events](src/aurora/runtime.py#L48): recuperam a sessão persistida e expõem seus eventos completos, incluindo chamadas e respostas de tools.
+- [runtime.py — Runtime.session](src/aurora/runtime.py#L58) e [events](src/aurora/runtime.py#L160): recuperam a sessão persistida e expõem seus eventos completos, incluindo chamadas e respostas de tools.
 - [storage.py — Storage.__init__](src/aurora/storage.py#L31): abre o banco de domínio e só carrega os dados iniciais quando ainda não há apartamentos cadastrados.
-- [runtime.py — Runtime.reconcile](src/aurora/runtime.py#L63): na próxima mensagem, tenta concluir decisões já aceitas que ficaram sem resultado após uma interrupção.
+- [runtime.py — Runtime.reconcile](src/aurora/runtime.py#L80): na próxima mensagem, tenta concluir decisões já aceitas que ficaram sem resultado após uma interrupção.
 
 **Por que não depende do prompt:** o estado está nos bancos em disco. Reiniciar o
 processo não executa o reset; a retomada usa os eventos e os identificadores
@@ -132,8 +132,8 @@ completo não é inserido nas instruções do principal nem retornado pela tool.
 
 **Onde está implementado:**
 
-- [regulation.py — Regulation.__init__ e search](src/aurora/regulation.py#L31): dividem o documento em capítulos e artigos, selecionam assuntos por termos e sinônimos e retornam os trechos correspondentes. Pedidos de texto integral recebem uma orientação para escolher um assunto.
-- [agents.py — consultar_regulamento e build_app](src/aurora/agents.py#L16): disponibilizam essa consulta ao especialista `regulamento`, enquanto o principal recebe apenas instruções de encaminhamento.
+- [regulation.py — Regulation.__init__](src/aurora/regulation.py#L38) e [search](src/aurora/regulation.py#L58): dividem o documento em capítulos e artigos, selecionam assuntos por termos e sinônimos e retornam os trechos correspondentes. Pedidos de texto integral recebem uma orientação para escolher um assunto.
+- [agents.py — consultar_regulamento](src/aurora/agents.py#L20) e [build_app](src/aurora/agents.py#L16): disponibilizam essa consulta ao especialista `regulamento`, enquanto o principal recebe apenas instruções de encaminhamento.
 
 **Por que não depende do prompt:** o código determina os trechos retornados pela
 busca. O arquivo é indexado localmente; o histórico recebe o resultado seletivo da
@@ -148,7 +148,7 @@ aprovam reservas da mesma área e data simultaneamente.
 
 - [storage.py — índice reservas_area_data_ativa](src/aurora/storage.py#L19): impõe unicidade de `(area, data)` para reservas ativas.
 - [storage.py — Storage.transaction](src/aurora/storage.py#L54): usa `BEGIN IMMEDIATE`, commit/rollback e tentativas limitadas para contenção de lock.
-- [repositories.py — Operations._effect](src/aurora/repositories.py#L92): converte a violação desse índice em resultado `indisponivel`, permitindo resposta HTTP normal para a tentativa que perdeu a disputa.
+- [repositories.py — Operations._effect](src/aurora/repositories.py#L172): converte a violação desse índice em resultado `indisponivel`, permitindo resposta HTTP normal para a tentativa que perdeu a disputa.
 
 Trecho do índice, com formatação expandida:
 
