@@ -1,0 +1,116 @@
+schema: spec-driven
+
+context: |
+  Idioma: português brasileiro (pt-BR). Todos os artefatos devem ser escritos em pt-BR,
+  preservando identificadores técnicos e marcadores estruturais exigidos pelo OpenSpec.
+
+  Projeto e objetivo:
+  - Assistente virtual do Residencial Aurora, exposto por uma API em http://localhost:8000.
+  - Moradores reservam salão de festas, churrasqueira e quadra, cancelam as próprias
+    reservas, autorizam visitantes e consultam o regulamento interno.
+  - O README.md contém o enunciado e os critérios de aceite. O repositório base fornece
+    os dados iniciais; agentes, tools, sessões, persistência e API são parte da entrega.
+  - O modelo conduz a conversa; regras críticas são impostas pelo código, inclusive
+    diante de prompt injection e de operações concorrentes.
+
+  Tecnologias e decisões em aberto:
+  - Python >= 3.12, gerenciado por uv, com pyproject.toml e uv.lock versionados.
+  - Google ADK da série 2, versão >= 2.2.0, com a versão exata fixada no projeto.
+  - Modelos Gemini com chave do Google AI Studio. A escolha dos modelos deve considerar
+    a documentação oficial e os limites ativos do projeto no momento da implementação.
+  - Framework web e armazenamento são livres; FastAPI é uma referência do curso,
+    não uma escolha obrigatória. Serviços externos exigem comando de subida documentado.
+  - Não versionar chaves nem .env. Versionar .env.example com nomes das variáveis, sem valores.
+
+  Arquitetura e dados:
+  - Um agente principal distribui o trabalho entre pelo menos dois agentes especialistas.
+    Responsabilidades, formas de acionamento e justificativas devem constar no README.
+  - Reservas e visitantes são consultados e alterados por tools que acessam os dados reais.
+  - Usar execução personalizada com Runner e App do ADK integrada à API assíncrona.
+  - Preservar integralmente dados/apartamentos.json, dados/areas.json, dados/reservas.json,
+    dados/visitantes.json e dados/regulamento.md; são o estado inicial imutável.
+  - Apartamentos têm numero e morador; áreas têm id, nome e taxa em reais; reservas têm
+    codigo, apartamento, area e data; visitantes têm apartamento, nome e data.
+  - Alterações operacionais devem ser armazenadas separadamente dos arquivos iniciais.
+    O comando de restauração repõe reservas e visitantes; apagar sessões é uma decisão livre.
+
+  Regras de negócio e cinco garantias obrigatórias:
+  1. Confirmação: reservar área com taxa > 0 ou autorizar visitante exige confirmação
+     pendente do sistema, respondida exclusivamente pela rota de confirmações.
+     Mensagens no chat não aprovam ações. Aprovar executa uma única vez; negar não altera
+     reservas nem visitantes. IDs inexistentes, de outra sessão ou já respondidos retornam
+     409 sem executar a ação. Área com taxa zero e cancelamento próprio não pedem confirmação.
+  2. Isolamento: o apartamento é definido uma única vez na criação da sessão e representa
+     o morador autenticado. Tools obtêm esse vínculo da sessão; qualquer apartamento
+     fornecido pelo modelo precisa ser validado contra ele. Não expor dados de outros
+     apartamentos nas respostas nem nos eventos, nem permitir alterações nesses dados.
+     Consultas de disponibilidade revelam apenas se a área/data está livre ou ocupada.
+  3. Persistência: reiniciar a API preserva sessões, histórico completo de eventos,
+     reservas, cancelamentos e visitantes; a mesma sessão aceita novas mensagens.
+     Códigos de novas reservas são gerados pelo sistema e nunca reutilizados, inclusive
+     códigos de reservas iniciais ou canceladas.
+  4. Regulamento: responder com base em dados/regulamento.md, consultando apenas trechos
+     pertinentes ao assunto. Nenhum evento pode conter trechos de capítulos de outros
+     assuntos. O agente principal não recebe o regulamento nas instruções.
+  5. Concorrência: no máximo uma reserva ativa por área/data, com exclusividade garantida
+     no instante da gravação. Uma consulta prévia de disponibilidade não basta.
+     Duas aprovações concorrentes para a mesma área/data retornam 200; uma reserva vence
+     e a outra é recusada normalmente, sem erro de servidor ou duplicidade.
+
+  Contrato obrigatório da API:
+  - Todas as rotas recebem/devolvem JSON; datas de verificação usam AAAA-MM-DD.
+    Rotas com session_id retornam 404 quando a sessão não existe.
+  - POST /sessoes recebe {apartamento} e retorna 201 com {session_id}.
+  - POST /sessoes/{session_id}/mensagens recebe {texto} e retorna 200 com
+    {resposta, confirmacoes_pendentes}. resposta pode ser vazia enquanto aguarda confirmação.
+  - confirmacoes_pendentes lista todas as pendências da sessão ou [] quando não há nenhuma.
+    Cada item tem {id, acao, detalhes}; detalhes identificam área/data ou visitante/data.
+    O conteúdo de acao e os nomes dos campos internos de detalhes são livres.
+  - POST /sessoes/{session_id}/confirmacoes recebe {id, confirmado} e retorna 200 no mesmo
+    formato de mensagens, ou 409 se o id não estiver pendente nessa sessão.
+  - GET /sessoes/{session_id}/eventos retorna 200 com a lista completa dos eventos gravados,
+    em ordem, incluindo chamadas de tools e o conteúdo completo de cada evento.
+  - GET /apartamentos/{apartamento}/reservas retorna 200 com [{codigo, area, data}].
+  - GET /apartamentos/{apartamento}/visitantes retorna 200 com [{nome, data}].
+  - Rotas de verificação consultam diretamente os dados, sem passar pelo modelo.
+
+  Escopo e entrega:
+  - Fora de escopo: interface visual, autenticação real, pagamento/estorno, antecedência,
+    restrições de datas passadas, horários de uso, capacidade, testes automatizados, evals e deploy.
+  - Comportamento livre para apartamento inexistente, respostas simultâneas à mesma
+    confirmação e novas mensagens enquanto há pendências, respeitando as garantias.
+    Reenvio sequencial de confirmação já respondida continua exigindo 409.
+  - Entrega em fork público, branch main, com README final nas seções Arquitetura,
+    Garantias e Como rodar. Garantias aponta arquivos e trechos reais de cada garantia;
+    Como rodar inclui pré-requisitos, variáveis de ambiente, subida e restauração.
+  - O fluxo de 15 passos e os critérios de aceite do enunciado orientam a validação manual:
+    clone limpo, uv sync, restauração, isolamento, confirmações, consulta do regulamento,
+    reinício com continuidade da sessão e disputa concorrente de reservas.
+  - Validar a retomada de confirmações com sessões persistidas e após reiniciar a API:
+    a resposta precisa chegar ao agente que solicitou a confirmação através do Runner.
+    A topologia, transferências, configuração de retomada do App e serviço de sessão
+    podem afetar esse fluxo; sucesso apenas no adk web ou em memória não o comprova.
+
+rules:
+  proposal:
+    - Explicitar o problema, o escopo e os itens fora de escopo em relação ao enunciado.
+    - Identificar quais das cinco garantias e quais rotas da API são afetadas.
+    - Distinguir requisitos obrigatórios de escolhas ainda abertas de arquitetura e tecnologia.
+  design:
+    - Explicar onde o código impõe cada garantia afetada, sem depender das decisões do modelo.
+    - Justificar a divisão dos agentes e o acionamento dos especialistas quando aplicável.
+    - Detalhar confirmação e retomada pelo Runner, isolamento por sessão, persistência,
+      recuperação seletiva do regulamento e exclusividade na gravação quando afetados.
+    - Preservar o contrato da API e os arquivos iniciais; justificar escolhas de armazenamento
+      e distinguir decisões confirmadas de hipóteses que precisam de validação.
+  specs:
+    - Formular requisitos verificáveis e cenários alinhados ao contrato e aos critérios de aceite.
+    - Cobrir sucesso, negação, reenvio, IDs inválidos, isolamento, prompt injection,
+      reinício e concorrência conforme a capacidade especificada.
+    - Verificar efeitos nos dados e nos eventos, além do texto das respostas do assistente.
+  tasks:
+    - Organizar tarefas com resultado observável e dependências claras.
+    - Incluir validação manual dos passos pertinentes do avaliador, sem tornar testes
+      automatizados, evals ou deploy requisitos da entrega.
+    - Incluir documentação dos comandos e das garantias quando afetadas, preservando
+      os requisitos do enunciado ao substituir o README pela documentação final.
